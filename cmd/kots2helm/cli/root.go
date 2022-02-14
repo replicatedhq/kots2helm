@@ -13,10 +13,11 @@ import (
 
 func RootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "kots2helm",
-		Short: "kots2helm",
-		Long:  ``,
-		Args:  cobra.MinimumNArgs(1),
+		Use:          "kots2helm",
+		Short:        "kots2helm",
+		Long:         ``,
+		SilenceUsage: true,
+		Args:         cobra.MinimumNArgs(1),
 		PreRun: func(cmd *cobra.Command, args []string) {
 			viper.BindPFlags(cmd.Flags())
 		},

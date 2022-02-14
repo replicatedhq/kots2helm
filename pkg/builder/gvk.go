@@ -17,6 +17,16 @@ type OverlySimpleGVK struct {
 	Kind       string `yaml:"kind"`
 }
 
+type OverlySimpleGVKWithAnnotations struct {
+	APIVersion string              `yaml:"apiVersion"`
+	Kind       string              `yaml:"kind"`
+	Metadata   OverySimplyMetadata `yaml:"metadata"`
+}
+
+type OverySimplyMetadata struct {
+	Annotations map[string]string `yaml:"annotations"`
+}
+
 func isKOTSManifest(content []byte) (bool, error) {
 	o := OverlySimpleGVK{}
 
@@ -46,4 +56,14 @@ func getGVK(content []byte) (string, error) {
 	}
 
 	return fmt.Sprintf("%s/%s", o.APIVersion, o.Kind), nil
+}
+
+func getAnnotations(content []byte) (map[string]string, error) {
+	o := OverlySimpleGVKWithAnnotations{}
+
+	if err := yaml.Unmarshal(content, &o); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal yaml")
+	}
+
+	return o.Metadata.Annotations, nil
 }

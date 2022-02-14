@@ -46,7 +46,6 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 				return err
 			}
 
-			// we can ignore kots manifests since they will be deleted
 			isKots, err := isKOTSManifest(content)
 			if err != nil {
 				return err
@@ -55,52 +54,20 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 				return nil
 			}
 
-			// content will be updated and resaved at the end of the function
-
-			// ConfigOption
-			c, err := replaceConfigOption(content, kotsConfig)
+			c, err := replaceWhenAndExcludeAnnotations(content, kotsConfig)
 			if err != nil {
 				return err
 			}
 			content = c
 
-			// ConfigOptionData
-
-			// ConfigOptionFilename
-
-			// ConfigOptionEquals
-			c, err = replaceConfigOptionEquals(content, kotsConfig)
+			helmContent, err := helmify(content, kotsConfig)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to helmify")
 			}
-			content = c
-
-			// ConfigOptionNotEquals
-
-			// Namespace
-			c, err = replaceNamespace(content)
-			if err != nil {
-				return err
-			}
-			content = c
-
-			// IsKurl
-			c, err = replaceIsKurl(content)
-			if err != nil {
-				return err
-			}
-			content = c
-
-			// if and conditional
-			c, err = replaceIfAndConditional(content)
-			if err != nil {
-				return err
-			}
-			content = c
 
 			// assert that there are no {{repl or repl{{ templates left.
 			// if there are, we need to fail the build
-			hasTemplateFunctions, err := numKotsTemplateFunctions(content)
+			hasTemplateFunctions, err := numKotsTemplateFunctions(helmContent)
 			if err != nil {
 				return errors.Wrap(err, "failed to check for kots template functions")
 			}
@@ -110,7 +77,7 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 				remainingKotsTemplateFunctionCount = true
 			}
 
-			if err := ioutil.WriteFile(path, content, info.Mode()); err != nil {
+			if err := ioutil.WriteFile(path, helmContent, info.Mode()); err != nil {
 				return err
 			}
 			return nil
@@ -125,6 +92,55 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 	}
 
 	return nil
+}
+
+func helmify(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
+	// we can ignore kots manifests since they will be deleted
+
+	// content will be updated and resaved at the end of the function
+
+	// ConfigOption
+	c, err := replaceConfigOption(content, kotsConfig)
+	if err != nil {
+		return nil, err
+	}
+	content = c
+
+	// ConfigOptionData
+
+	// ConfigOptionFilename
+
+	// ConfigOptionEquals
+	c, err = replaceConfigOptionEquals(content, kotsConfig)
+	if err != nil {
+		return nil, err
+	}
+	content = c
+
+	// ConfigOptionNotEquals
+
+	// Namespace
+	c, err = replaceNamespace(content)
+	if err != nil {
+		return nil, err
+	}
+	content = c
+
+	// IsKurl
+	c, err = replaceIsKurl(content)
+	if err != nil {
+		return nil, err
+	}
+	content = c
+
+	// if and conditional
+	c, err = replaceIfAndConditional(content)
+	if err != nil {
+		return nil, err
+	}
+	content = c
+
+	return content, nil
 }
 
 func replaceIfAndConditional(content []byte) ([]byte, error) {
@@ -227,30 +243,70 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 	return []byte(updatedContent), nil
 }
 
+func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
+	annotations, err := getAnnotations(content)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get annotations")
+	}
+
+	for k, v := range annotations {
+		if k == "kots.io/when" {
+			// convert the value to a helm template
+			helmed, err := helmify([]byte(v), kotsConfig)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to helmify")
+			}
+			// TODO should we remove the annotation also?
+			// it's probably harmless in a helm chart
+			return []byte(fmt.Sprintf(`{{ if %s }}
+%s
+{{ end }}`, string(helmed), content)), nil
+		} else if k == "kots.io/exclude" {
+			// convert the value to a helm template
+			helmed, err := helmify([]byte(v), kotsConfig)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to helmify")
+			}
+			// TODO should we remove the annotation also?
+			// it's probably harmless in a helm chart
+			return []byte(fmt.Sprintf(`{{ if ne %s }}
+%s
+{{ end }}`, string(helmed), content)), nil
+		}
+	}
+
+	return content, nil
+}
+
 func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
 	// this is a supoer basic implementation for now
-	delimiters := []string{
-		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
-		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
-		// TODO " vs ' vs ` and more"
+	delimiters := map[string]string{
+		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`:  `{{ .Values.%s }}`,
+		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`:  `{{ .Values.%s }}`,
+		"(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})": `{{ .Values.%s }}`,
+		"(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})": `{{ .Values.%s }}`,
+
+		// after those ^^ are replaced, these will be safer (without the end delimiter)
+		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`:  `{{ .Values.%s `,
+		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`:  `{{ .Values.%s `,
+		"(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)": `{{ .Values.%s `,
+		"(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)": `{{ .Values.%s `,
 	}
 
 	updatedContent := string(content)
 
-	for _, delimiter := range delimiters {
+	for delimiter, value := range delimiters {
 		r := regexp.MustCompile(delimiter)
 		regexMatch := r.FindAllStringSubmatch(string(content), -1)
 		for _, result := range regexMatch {
-			fmt.Printf("%#v\n", result)
 			_, valuesPath, err := getValuesTypeAndPathForConfigItem(result[1], kotsConfig)
-			fmt.Printf("%#v\n", valuesPath)
 			if err != nil {
 				// we don't error here, it will catch it later if the function remains
 				// in the yaml
 				continue
 			}
 
-			updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ .Values.%s }}`, valuesPath))
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(value, valuesPath))
 		}
 
 	}

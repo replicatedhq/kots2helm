@@ -137,6 +137,28 @@ func Test_replaceConfigOption(t *testing.T) {
 			expect: `name: "{{ .Values.group1.foo1 }}"`,
 		},
 		{
+			name: "direct replace with ` as quotes",
+			args: args{
+				content: "name: repl{{ ConfigOption `foo`}}",
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{
+							{
+								Name: "group1",
+								Items: []kotsv1beta1.ConfigItem{
+									{
+										Name:  "foo",
+										Value: multitype.FromString("bar"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expect: `name: {{ .Values.group1.foo }}`,
+		},
+		{
 			name: "direct replace with reverse template",
 			args: args{
 				content: `name: "repl{{ ConfigOption "foo"}}"`,
@@ -390,9 +412,9 @@ func Test_replaceIsKurl(t *testing.T) {
 		{
 			name: "isKurl",
 			args: args{
-				content: `storageClassName: repl{{ if eq{{ .Values.isKurl }}false}} {{ .Values.storage.storage.shared_storage_class }}}} repl{{ else}} longhorn repl{{ end}}`,
+				content: `storageClassName: repl{{ if eq IsKurl false}} repl{{ ConfigOption "storage.shared_storage_class" }} repl{{ else}} longhorn repl{{ end}}`,
 			},
-			expect: `storageClassName: repl{{ if eq{{ .Values.isKurl }}false}} {{ .Values.storage.storage.shared_storage_class }}}} repl{{ else}} longhorn repl{{ end}}`,
+			expect: `storageClassName: {{ if eq .Values.isKurl false}} {{ .Values.storage.storage.shared_storage_class }}}} {{ else}} longhorn {{ end}}`,
 		},
 	}
 	for _, tt := range tests {
@@ -440,6 +462,56 @@ func Test_replaceIfAndConditional(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := require.New(t)
 			actual, err := replaceIfAndConditional([]byte(tt.args.content))
+			req.NoError(err)
+			assert.Equal(t, tt.expect, string(actual))
+		})
+	}
+}
+
+func Test_replaceWhenAndExcludeAnnotations(t *testing.T) {
+	type args struct {
+		content    string
+		kotsConfig *kotsv1beta1.Config
+	}
+	tests := []struct {
+		name   string
+		args   args
+		expect string
+	}{
+		{
+			name: "when",
+			args: args{
+				content: `apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kots.io/when: "{{repl IsKurl}}"
+spec:
+  type: ClusterIP`,
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{},
+					},
+				},
+			},
+			expect: `{{ if .Values.isKurl }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentry
+  labels:
+    app: sentry
+  annotations:
+    kots.io/when: "{{repl IsKurl}}"
+spec:
+  type: ClusterIP
+{{ end }}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := require.New(t)
+			actual, err := replaceWhenAndExcludeAnnotations([]byte(tt.args.content), tt.args.kotsConfig)
 			req.NoError(err)
 			assert.Equal(t, tt.expect, string(actual))
 		})
