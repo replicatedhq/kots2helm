@@ -1,3 +1,5 @@
+[![build-test](https://github.com/replicatedhq/kots2helm/actions/workflows/build-test.yaml/badge.svg)](https://github.com/replicatedhq/kots2helm/actions/workflows/build-test.yaml)
+
 # KOTS2Helm
 
 This is an experimental repo that attempts to convert a KOTS application to a Helm chart.
