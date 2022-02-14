@@ -117,7 +117,7 @@ func Test_replaceConfigOption(t *testing.T) {
 		{
 			name: "direct replace",
 			args: args{
-				content: `name: "{{repl ConfigOption "foo"}}"`,
+				content: `name: "{{repl ConfigOption "foo1"}}"`,
 				kotsConfig: &kotsv1beta1.Config{
 					Spec: kotsv1beta1.ConfigSpec{
 						Groups: []kotsv1beta1.ConfigGroup{
@@ -125,7 +125,7 @@ func Test_replaceConfigOption(t *testing.T) {
 								Name: "group1",
 								Items: []kotsv1beta1.ConfigItem{
 									{
-										Name:  "foo",
+										Name:  "foo1",
 										Value: multitype.FromString("bar"),
 									},
 								},
@@ -134,7 +134,7 @@ func Test_replaceConfigOption(t *testing.T) {
 					},
 				},
 			},
-			expect: `name: "{{ .Values.group1.foo }}"`,
+			expect: `name: "{{ .Values.group1.foo1 }}"`,
 		},
 		{
 			name: "direct replace with reverse template",
@@ -201,6 +201,28 @@ func Test_replaceConfigOption(t *testing.T) {
 				},
 			},
 			expect: `name: "{{repl ConfigOption "foo"}}"`,
+		},
+		{
+			name: "config item piped to base64",
+			args: args{
+				content: `password: '{{repl ConfigOption "postgres_password" | Base64Encode }}'`,
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{
+							{
+								Name: "group1",
+								Items: []kotsv1beta1.ConfigItem{
+									{
+										Name: "postgres_password",
+										Type: "password",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expect: `password: '{{ .Values.group1.postgres_password | Base64Encode }}'`,
 		},
 	}
 	for _, tt := range tests {

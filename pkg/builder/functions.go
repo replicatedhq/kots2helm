@@ -230,8 +230,8 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
 	// this is a supoer basic implementation for now
 	delimiters := []string{
-		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
-		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
+		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
+		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
 		// TODO " vs ' vs ` and more"
 	}
 
@@ -241,7 +241,9 @@ func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte
 		r := regexp.MustCompile(delimiter)
 		regexMatch := r.FindAllStringSubmatch(string(content), -1)
 		for _, result := range regexMatch {
+			fmt.Printf("%#v\n", result)
 			_, valuesPath, err := getValuesTypeAndPathForConfigItem(result[1], kotsConfig)
+			fmt.Printf("%#v\n", valuesPath)
 			if err != nil {
 				// we don't error here, it will catch it later if the function remains
 				// in the yaml
