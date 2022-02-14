@@ -25,8 +25,16 @@ The following list contains the tested template functions and how they are conve
 | IsKurl | Yes | Always will evaluate to false, this will write a value to values.yaml `isKurl = false` and replace the template function {{ IsKurl }} with {{ .Values.isKurl }}
 | Namespace | Yes | Uses the {{ .Release.Namespace }} function
 
+### Annotations
+
+KOTS supports `kots.io/when` and `kots.io/exclude` annotations. These will be converted to {{ if }}... {{ end if}} around the entire manifest.
 
 In addition to the template functions, this will config conditional logic (if, else, end) from {{repl if}} to helm's {{if }} syntax.
+
+### TODO 
+
+- Support for multi doc yaml?
+- LicenseFieldValue?
 
 ## Example?
 

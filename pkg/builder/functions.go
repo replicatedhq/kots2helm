@@ -169,7 +169,8 @@ func replaceIfAndConditional(content []byte) ([]byte, error) {
 // replaceIsKurl IsKurl
 func replaceIsKurl(content []byte) ([]byte, error) {
 	delimiters := []string{
-		`(?:\s+IsKurl\s+)(?:\s?)`,
+		`(?:{{repl\s+IsKurl)(?:\s?)`,
+		`(?:repl{{\s+IsKurl)(?:\s?)`,
 	}
 
 	updatedContent := string(content)
@@ -178,7 +179,7 @@ func replaceIsKurl(content []byte) ([]byte, error) {
 		r := regexp.MustCompile(delimiter)
 		regexMatch := r.FindAllStringSubmatch(string(content), -1)
 		for _, result := range regexMatch {
-			updatedContent = strings.ReplaceAll(updatedContent, result[0], `{{ .Values.isKurl }}`)
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], `{{ .Values.isKurl `)
 		}
 	}
 
@@ -256,11 +257,22 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to helmify")
 			}
-			// TODO should we remove the annotation also?
-			// it's probably harmless in a helm chart
+
+			// we remove the annotation, even though it's harmless because
+			// when we leave it, we can't detect it in our "any templates left?" check
+			updatedAnnotations := map[string]string{}
+			for otherK, otherV := range annotations {
+				if otherK != "kots.io/when" {
+					updatedAnnotations[otherK] = otherV
+				}
+			}
+			withoutWhen, err := withAnnotations(content, updatedAnnotations)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to remove when annotation")
+			}
 			return []byte(fmt.Sprintf(`{{ if %s }}
 %s
-{{ end }}`, string(helmed), content)), nil
+{{ end }}`, string(helmed), withoutWhen)), nil
 		} else if k == "kots.io/exclude" {
 			// convert the value to a helm template
 			helmed, err := helmify([]byte(v), kotsConfig)

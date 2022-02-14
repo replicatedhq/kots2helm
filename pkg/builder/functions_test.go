@@ -410,17 +410,24 @@ func Test_replaceIsKurl(t *testing.T) {
 			expect: `namespace: "test"`,
 		},
 		{
-			name: "isKurl",
+			name: "simple isKurl",
 			args: args{
-				content: `storageClassName: repl{{ if eq IsKurl false}} repl{{ ConfigOption "storage.shared_storage_class" }} repl{{ else}} longhorn repl{{ end}}`,
+				content: `isKurl: "{{repl IsKurl}}"`,
 			},
-			expect: `storageClassName: {{ if eq .Values.isKurl false}} {{ .Values.storage.storage.shared_storage_class }}}} {{ else}} longhorn {{ end}}`,
+			expect: `isKurl: "{{ .Values.isKurl }}"`,
 		},
+		// {
+		// 	name: "isKurl",
+		// 	args: args{
+		// 		content: `storageClassName: repl{{ if eq IsKurl false}} repl{{ ConfigOption "storage.shared_storage_class" }} repl{{ else}} longhorn repl{{ end}}`,
+		// 	},
+		// 	expect: `storageClassName: {{ if eq .Values.isKurl false}} {{ .Values.storage.storage.shared_storage_class }}}} {{ else}} longhorn {{ end}}`,
+		// },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := require.New(t)
-			actual, err := replaceNamespace([]byte(tt.args.content))
+			actual, err := replaceIsKurl([]byte(tt.args.content))
 			req.NoError(err)
 			assert.Equal(t, tt.expect, string(actual))
 		})

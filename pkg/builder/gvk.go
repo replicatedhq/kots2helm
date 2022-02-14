@@ -67,3 +67,21 @@ func getAnnotations(content []byte) (map[string]string, error) {
 
 	return o.Metadata.Annotations, nil
 }
+
+func withAnnotations(content []byte, annotations map[string]string) ([]byte, error) {
+	y := map[string]interface{}{}
+	if err := yaml.Unmarshal(content, &y); err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal yaml")
+	}
+
+	metadata := y["metadata"].(map[interface{}]interface{})
+	metadata["annotations"] = annotations
+	y["metadata"] = metadata
+
+	remarshaled, err := yaml.Marshal(y)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal yaml")
+	}
+
+	return remarshaled, nil
+}
