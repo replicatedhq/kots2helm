@@ -77,7 +77,26 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 
 			// ConfigOptionNotEquals
 
-			// Namesapce
+			// Namespace
+			c, err = replaceNamespace(content)
+			if err != nil {
+				return err
+			}
+			content = c
+
+			// IsKurl
+			c, err = replaceIsKurl(content)
+			if err != nil {
+				return err
+			}
+			content = c
+
+			// if and conditional
+			c, err = replaceIfAndConditional(content)
+			if err != nil {
+				return err
+			}
+			content = c
 
 			// assert that there are no {{repl or repl{{ templates left.
 			// if there are, we need to fail the build
@@ -106,6 +125,67 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 	}
 
 	return nil
+}
+
+func replaceIfAndConditional(content []byte) ([]byte, error) {
+	delimiters := map[string]string{
+		`(?:{{repl\s+if)(?:\s?)`:   "{{ if ",
+		`(?:repl{{\s+if)(?:\s?)`:   "{{ if ",
+		`(?:{{repl\s+else)(?:\s?)`: "{{ else ",
+		`(?:repl{{\s+else)(?:\s?)`: "{{ else ",
+		`(?:{{repl\s+end)(?:\s?)`:  "{{ end ",
+		`(?:repl{{\s+end)(?:\s?)`:  "{{ end ",
+	}
+
+	updatedContent := string(content)
+
+	for delimiter, replace := range delimiters {
+		r := regexp.MustCompile(delimiter)
+		regexMatch := r.FindAllStringSubmatch(string(content), -1)
+		for _, result := range regexMatch {
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], replace)
+		}
+	}
+
+	return []byte(updatedContent), nil
+}
+
+// replaceIsKurl IsKurl
+func replaceIsKurl(content []byte) ([]byte, error) {
+	delimiters := []string{
+		`(?:\s+IsKurl\s+)(?:\s?)`,
+	}
+
+	updatedContent := string(content)
+
+	for _, delimiter := range delimiters {
+		r := regexp.MustCompile(delimiter)
+		regexMatch := r.FindAllStringSubmatch(string(content), -1)
+		for _, result := range regexMatch {
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], `{{ .Values.isKurl }}`)
+		}
+	}
+
+	return []byte(updatedContent), nil
+}
+
+func replaceNamespace(content []byte) ([]byte, error) {
+	delimiters := []string{
+		`(?:{{repl\s+Namespace)(?:\s?}})`,
+		`(?:repl{{\s+Namespace)(?:\s?}})`,
+	}
+
+	updatedContent := string(content)
+
+	for _, delimiter := range delimiters {
+		r := regexp.MustCompile(delimiter)
+		regexMatch := r.FindAllStringSubmatch(string(content), -1)
+		for _, result := range regexMatch {
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], `{{ .Release.Namespace }}`)
+		}
+	}
+
+	return []byte(updatedContent), nil
 }
 
 func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
@@ -142,7 +222,6 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 			}
 
 		}
-
 	}
 
 	return []byte(updatedContent), nil
@@ -151,8 +230,8 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
 	// this is a supoer basic implementation for now
 	delimiters := []string{
-		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
-		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
+		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
+		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
 		// TODO " vs ' vs ` and more"
 	}
 

@@ -33,6 +33,8 @@ func Build(inputDir string, name string, version string) error {
 		return err
 	}
 
+	// TODO: copy depenencies and existing helm charts
+
 	if err := createValuesYAML(workspace); err != nil {
 		return err
 	}

@@ -26,6 +26,9 @@ func createValuesYAML(workspace string) error {
 	kotsConfig := obj.(*kotsv1beta1.Config)
 	values := map[string]interface{}{}
 
+	// always present
+	values["isKurl"] = false
+
 	for _, configGroup := range kotsConfig.Spec.Groups {
 		valuesGroup := map[string]interface{}{}
 		for _, configItem := range configGroup.Items {

@@ -314,3 +314,112 @@ func Test_replaceConfigOptionEquals(t *testing.T) {
 		})
 	}
 }
+
+func Test_replaceNamespace(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name   string
+		args   args
+		expect string
+	}{
+		{
+			name: "no namespace",
+			args: args{
+				content: `namespace: "test"`,
+			},
+			expect: `namespace: "test"`,
+		},
+		{
+			name: "namespace",
+			args: args{
+				content: `namespace: "{{repl Namespace}}"`,
+			},
+			expect: `namespace: "{{ .Release.Namespace }}"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := require.New(t)
+			actual, err := replaceNamespace([]byte(tt.args.content))
+			req.NoError(err)
+			assert.Equal(t, tt.expect, string(actual))
+		})
+	}
+}
+
+func Test_replaceIsKurl(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name   string
+		args   args
+		expect string
+	}{
+		{
+			name: "no isKurl",
+			args: args{
+				content: `namespace: "test"`,
+			},
+			expect: `namespace: "test"`,
+		},
+		{
+			name: "isKurl",
+			args: args{
+				content: `storageClassName: repl{{ if eq{{ .Values.isKurl }}false}} {{ .Values.storage.storage.shared_storage_class }}}} repl{{ else}} longhorn repl{{ end}}`,
+			},
+			expect: `storageClassName: repl{{ if eq{{ .Values.isKurl }}false}} {{ .Values.storage.storage.shared_storage_class }}}} repl{{ else}} longhorn repl{{ end}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := require.New(t)
+			actual, err := replaceNamespace([]byte(tt.args.content))
+			req.NoError(err)
+			assert.Equal(t, tt.expect, string(actual))
+		})
+	}
+}
+
+func Test_replaceIfAndConditional(t *testing.T) {
+	type args struct {
+		content string
+	}
+	tests := []struct {
+		name   string
+		args   args
+		expect string
+	}{
+		{
+			name: "{{repl if",
+			args: args{
+				content: `{{repl if eq`,
+			},
+			expect: `{{ if eq`,
+		},
+		{
+			name: "repl{{ if",
+			args: args{
+				content: `repl{{ if eq`,
+			},
+			expect: `{{ if eq`,
+		},
+		{
+			name: "repl{{ else}}",
+			args: args{
+				content: `repl{{ else}}`,
+			},
+			expect: `{{ else }}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := require.New(t)
+			actual, err := replaceIfAndConditional([]byte(tt.args.content))
+			req.NoError(err)
+			assert.Equal(t, tt.expect, string(actual))
+		})
+	}
+}
