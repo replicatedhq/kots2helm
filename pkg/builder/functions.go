@@ -266,24 +266,36 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 					updatedAnnotations[otherK] = otherV
 				}
 			}
+
 			withoutWhen, err := withAnnotations(content, updatedAnnotations)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to remove when annotation")
 			}
 			return []byte(fmt.Sprintf(`{{ if %s }}
 %s
-{{ end }}`, string(helmed), withoutWhen)), nil
+{{ end }}`, string(helmed), strings.TrimSpace(string(withoutWhen)))), nil
 		} else if k == "kots.io/exclude" {
 			// convert the value to a helm template
 			helmed, err := helmify([]byte(v), kotsConfig)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to helmify")
 			}
-			// TODO should we remove the annotation also?
-			// it's probably harmless in a helm chart
+
+			// when we leave it, we can't detect it in our "any templates left?" check
+			updatedAnnotations := map[string]string{}
+			for otherK, otherV := range annotations {
+				if otherK != "kots.io/exclude" {
+					updatedAnnotations[otherK] = otherV
+				}
+			}
+
+			withoutExclude, err := withAnnotations(content, updatedAnnotations)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to remove excude annotation")
+			}
 			return []byte(fmt.Sprintf(`{{ if ne %s }}
 %s
-{{ end }}`, string(helmed), content)), nil
+{{ end }}`, string(helmed), strings.TrimSpace(string(withoutExclude)))), nil
 		}
 	}
 

@@ -501,15 +501,11 @@ spec:
 					},
 				},
 			},
-			expect: `{{ if .Values.isKurl }}
+			expect: `{{ if {{ .Values.isKurl }} }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: sentry
-  labels:
-    app: sentry
-  annotations:
-    kots.io/when: "{{repl IsKurl}}"
+  annotations: {}
 spec:
   type: ClusterIP
 {{ end }}`,
