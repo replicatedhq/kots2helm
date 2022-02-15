@@ -348,6 +348,28 @@ func Test_replaceConfigOptionEquals(t *testing.T) {
 			},
 			expect: `name: "{{ if eq .Values.group1.foo false }}true{{ else }}false{{ end }}"`,
 		},
+		{
+			name: "quoted",
+			args: args{
+				content: `'{{repl ConfigOptionEquals "redis_type" "embedded_redis"}}'`,
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{
+							{
+								Name: "group1",
+								Items: []kotsv1beta1.ConfigItem{
+									{
+										Name:  "redis_type",
+										Value: multitype.FromString("embedded_redis"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expect: `'{{ if eq .Values.redis_type "embedded_redis" }}'`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
