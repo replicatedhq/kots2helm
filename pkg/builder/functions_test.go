@@ -416,6 +416,13 @@ func Test_replaceIsKurl(t *testing.T) {
 			},
 			expect: `isKurl: "{{ .Values.isKurl }}"`,
 		},
+		{
+			name: "simple not isKurl",
+			args: args{
+				content: `"{{repl not IsKurl}}"`,
+			},
+			expect: `"{{ not .Values.isKurl }}"`,
+		},
 		// {
 		// 	name: "isKurl",
 		// 	args: args{

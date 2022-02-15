@@ -168,18 +168,20 @@ func replaceIfAndConditional(content []byte) ([]byte, error) {
 
 // replaceIsKurl IsKurl
 func replaceIsKurl(content []byte) ([]byte, error) {
-	delimiters := []string{
-		`(?:{{repl\s+IsKurl)(?:\s?)`,
-		`(?:repl{{\s+IsKurl)(?:\s?)`,
+	delimiters := map[string]string{
+		`(?:{{repl\s+IsKurl)(?:\s?)`:       `{{ .Values.isKurl `,
+		`(?:repl{{\s+IsKurl)(?:\s?)`:       `{{ .Values.isKurl `,
+		`(?:{{repl\s+not\s+IsKurl)(?:\s?)`: `{{ not .Values.isKurl `,
+		`(?:repl{{\s+not\s+IsKurl)(?:\s?)`: `{{ not .Values.isKurl `,
 	}
 
 	updatedContent := string(content)
 
-	for _, delimiter := range delimiters {
+	for delimiter, value := range delimiters {
 		r := regexp.MustCompile(delimiter)
 		regexMatch := r.FindAllStringSubmatch(string(content), -1)
 		for _, result := range regexMatch {
-			updatedContent = strings.ReplaceAll(updatedContent, result[0], `{{ .Values.isKurl `)
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], value)
 		}
 	}
 
