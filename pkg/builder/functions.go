@@ -230,7 +230,7 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 
 			// TODO this is not the only use of ConfigOptionEquals
 			switch valuesType {
-			case "string", "password":
+			case "string", "password", "":
 				updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %q }}true{{ else }}false{{ end }}`, valuesPath, result[2]))
 			case "bool":
 				v, err := strconv.ParseBool(result[2])
