@@ -22,8 +22,16 @@ func Build(inputDir string, name string, version string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("check %s\n", workspace)
-	// defer os.RemoveAll(workspace)
+
+	wasSuccessful := false
+	defer func() {
+		if wasSuccessful {
+			os.RemoveAll(workspace)
+			return
+		}
+
+		fmt.Printf("some templates did not convert. the work is left in %s\n", workspace)
+	}()
 
 	if err := os.MkdirAll(filepath.Join(workspace, "templates"), 0755); err != nil {
 		return err
@@ -59,7 +67,9 @@ func Build(inputDir string, name string, version string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(archiveFile)
+
+	wasSuccessful = true
+	fmt.Printf("chart is at %s\n", archiveFile)
 
 	// if err := build.publishHelmChart(archiveFile, r); err != nil {
 	// 	buildError = errors.Wrap(err, "failed to publish helm chart")

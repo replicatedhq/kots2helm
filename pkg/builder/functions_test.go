@@ -84,7 +84,7 @@ spec:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := require.New(t)
-			actual, err := numKotsTemplateFunctions([]byte(tt.content))
+			actual, err := numKotsTemplateFunctions("", []byte(tt.content), false)
 
 			req.NoError(err)
 			assert.Equal(t, tt.expect, actual)

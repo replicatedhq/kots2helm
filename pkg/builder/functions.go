@@ -41,6 +41,12 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 				return nil
 			}
 
+			// if this is a helm chart, we don't convert..
+			// we need to add these to the deps
+			if filepath.Ext(path) == ".tgz" {
+				return nil
+			}
+
 			content, err := ioutil.ReadFile(path)
 			if err != nil {
 				return err
@@ -56,18 +62,21 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 
 			c, err := replaceWhenAndExcludeAnnotations(content, kotsConfig)
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "replaceWhenAndExcludeAnnotations for %q", path)
 			}
 			content = c
 
-			helmContent, err := helmify(content, kotsConfig)
+			opts := HelmifyOpts{
+				FullExpandConfigOptionEqualsToIfElseEnd: true,
+			}
+			helmContent, err := helmify(content, kotsConfig, opts)
 			if err != nil {
 				return errors.Wrap(err, "failed to helmify")
 			}
 
 			// assert that there are no {{repl or repl{{ templates left.
 			// if there are, we need to fail the build
-			hasTemplateFunctions, err := numKotsTemplateFunctions(helmContent)
+			hasTemplateFunctions, err := numKotsTemplateFunctions(path, helmContent, true)
 			if err != nil {
 				return errors.Wrap(err, "failed to check for kots template functions")
 			}
@@ -94,7 +103,11 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 	return nil
 }
 
-func helmify(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
+type HelmifyOpts struct {
+	FullExpandConfigOptionEqualsToIfElseEnd bool
+}
+
+func helmify(content []byte, kotsConfig *kotsv1beta1.Config, opts HelmifyOpts) ([]byte, error) {
 	// we can ignore kots manifests since they will be deleted
 
 	// content will be updated and resaved at the end of the function
@@ -111,7 +124,7 @@ func helmify(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
 	// ConfigOptionFilename
 
 	// ConfigOptionEquals
-	c, err = replaceConfigOptionEquals(content, kotsConfig)
+	c, err = replaceConfigOptionEquals(content, kotsConfig, opts.FullExpandConfigOptionEqualsToIfElseEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +220,7 @@ func replaceNamespace(content []byte) ([]byte, error) {
 	return []byte(updatedContent), nil
 }
 
-func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
+func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config, expandToElseEnd bool) ([]byte, error) {
 	// this is a supoer basic implementation for now
 	delimiters := []string{
 		`(?:{{repl\s+ConfigOptionEquals\s+\")(?P<Item>.*)(?:\"\s+\")(?P<Value>.*)(?:\"\s?}})`,
@@ -231,13 +244,21 @@ func replaceConfigOptionEquals(content []byte, kotsConfig *kotsv1beta1.Config) (
 			// TODO this is not the only use of ConfigOptionEquals
 			switch valuesType {
 			case "string", "password", "":
-				updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %q }}true{{ else }}false{{ end }}`, valuesPath, result[2]))
+				if expandToElseEnd {
+					updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %q }}true{{ else }}false{{ end }}`, valuesPath, result[2]))
+				} else {
+					updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %q }}`, valuesPath, result[2]))
+				}
 			case "bool":
 				v, err := strconv.ParseBool(result[2])
 				if err != nil {
 					return nil, errors.Wrap(err, "failed to parse bool")
 				}
-				updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %t }}true{{ else }}false{{ end }}`, valuesPath, v))
+				if expandToElseEnd {
+					updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %t }}true{{ else }}false{{ end }}`, valuesPath, v))
+				} else {
+					updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(`{{ if eq .Values.%s %t }}`, valuesPath, v))
+				}
 			}
 
 		}
@@ -255,7 +276,10 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 	for k, v := range annotations {
 		if k == "kots.io/when" {
 			// convert the value to a helm template
-			helmed, err := helmify([]byte(v), kotsConfig)
+			opts := HelmifyOpts{
+				FullExpandConfigOptionEqualsToIfElseEnd: false, // this won't be compatible with helm if do it otherwise
+			}
+			helmed, err := helmify([]byte(v), kotsConfig, opts)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to helmify")
 			}
@@ -273,12 +297,15 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to remove when annotation")
 			}
-			return []byte(fmt.Sprintf(`{{ if %s }}
+			return []byte(fmt.Sprintf(`%s
 %s
 {{ end }}`, string(helmed), strings.TrimSpace(string(withoutWhen)))), nil
 		} else if k == "kots.io/exclude" {
 			// convert the value to a helm template
-			helmed, err := helmify([]byte(v), kotsConfig)
+			opts := HelmifyOpts{
+				FullExpandConfigOptionEqualsToIfElseEnd: false, // this won't be compatible with helm if do it otherwise
+			}
+			helmed, err := helmify([]byte(v), kotsConfig, opts)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to helmify")
 			}
@@ -295,7 +322,7 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to remove excude annotation")
 			}
-			return []byte(fmt.Sprintf(`{{ if ne %s }}
+			return []byte(fmt.Sprintf(`%s
 %s
 {{ end }}`, string(helmed), strings.TrimSpace(string(withoutExclude)))), nil
 		}
@@ -352,7 +379,7 @@ func getValuesTypeAndPathForConfigItem(itemName string, kotsConfig *kotsv1beta1.
 	return "", "", errors.Errorf("failed to find config item %s", itemName)
 }
 
-func numKotsTemplateFunctions(content []byte) (int, error) {
+func numKotsTemplateFunctions(filename string, content []byte, printResults bool) (int, error) {
 	numReplFns := 0
 
 	// {{repl
@@ -360,6 +387,10 @@ func numKotsTemplateFunctions(content []byte) (int, error) {
 
 	// repl{{
 	numReplFns += len(regexp.MustCompile(`repl{{\s+`).FindAllString(string(content), -1))
+
+	if numReplFns > 0 && printResults {
+		fmt.Printf("file %s has %d unconverted kots functions\n", filename, numReplFns)
+	}
 
 	return numReplFns, nil
 }
