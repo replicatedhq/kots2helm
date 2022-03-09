@@ -11,24 +11,25 @@ import (
 
 	"github.com/pkg/errors"
 	kotsv1beta1 "github.com/replicatedhq/kots/kotskinds/apis/kots/v1beta1"
+	"github.com/replicatedhq/kots2helm/pkg/logger"
 )
 
 // replaceKOTSTemplatesWithHelmTemplates handles converting kots templates to helm templates
-func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
+func replaceKOTSTemplatesWithHelmTemplates(workspace string) (map[string]int, error) {
 	objP, err := getKOTSKind(workspace, "kots.io", "v1beta1", "Config")
 	if err != nil {
-		return errors.Wrap(err, "failed to get config")
+		return nil, errors.Wrap(err, "failed to get config")
 	}
 	if objP == nil {
 		// there isn't a kots config
 		// TODO: should we error here?
-		return nil // no maybe its plain k8s
+		return nil, nil // no maybe its plain k8s
 	}
 
 	obj := *objP
 	kotsConfig := obj.(*kotsv1beta1.Config)
 
-	remainingKotsTemplateFunctionCount := false
+	remainingKotsTemplateFunctionsMap := map[string]int{}
 
 	err = filepath.Walk(filepath.Join(workspace, "templates"),
 		func(path string, info os.FileInfo, err error) error {
@@ -60,47 +61,46 @@ func replaceKOTSTemplatesWithHelmTemplates(workspace string) error {
 				return nil
 			}
 
-			c, err := replaceWhenAndExcludeAnnotations(content, kotsConfig)
+			logger.Verbosef("processing file: %q", path)
+
+			content, err = replaceWhenAndExcludeAnnotations(content, kotsConfig)
 			if err != nil {
 				return errors.Wrapf(err, "replaceWhenAndExcludeAnnotations for %q", path)
 			}
-			content = c
 
 			opts := HelmifyOpts{
 				FullExpandConfigOptionEqualsToIfElseEnd: true,
 			}
-			helmContent, err := helmify(content, kotsConfig, opts)
+			content, err = helmify(content, kotsConfig, opts)
 			if err != nil {
 				return errors.Wrap(err, "failed to helmify")
 			}
 
 			// assert that there are no {{repl or repl{{ templates left.
 			// if there are, we need to fail the build
-			hasTemplateFunctions, err := numKotsTemplateFunctions(path, helmContent, true)
+			hasTemplateFunctions, err := numKotsTemplateFunctions(path, content, true)
 			if err != nil {
 				return errors.Wrap(err, "failed to check for kots template functions")
 			}
 
 			if hasTemplateFunctions > 0 {
+
 				fmt.Printf("%s has %d kots template functions\n", path, hasTemplateFunctions)
-				remainingKotsTemplateFunctionCount = true
+				pathWithoutWorkspace := strings.Replace(path, workspace+"/", "", 1)
+				remainingKotsTemplateFunctionsMap[pathWithoutWorkspace] = hasTemplateFunctions
 			}
 
-			if err := ioutil.WriteFile(path, helmContent, info.Mode()); err != nil {
+			if err := ioutil.WriteFile(path, content, info.Mode()); err != nil {
 				return err
 			}
 			return nil
 		})
 
 	if err != nil {
-		return errors.Wrap(err, "failed to walk workspace")
+		return nil, errors.Wrap(err, "failed to walk workspace")
 	}
 
-	if remainingKotsTemplateFunctionCount {
-		return errors.New("kots template functions remain")
-	}
-
-	return nil
+	return remainingKotsTemplateFunctionsMap, nil
 }
 
 type HelmifyOpts struct {
@@ -332,25 +332,59 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 }
 
 func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte, error) {
-	// this is a supoer basic implementation for now
-	delimiters := map[string]string{
-		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`:  `{{ .Values.%s }}`,
-		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`:  `{{ .Values.%s }}`,
-		"(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})": `{{ .Values.%s }}`,
-		"(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})": `{{ .Values.%s }}`,
-
-		// after those ^^ are replaced, these will be safer (without the end delimiter)
-		`(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`:  `{{ .Values.%s `,
-		`(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`:  `{{ .Values.%s `,
-		"(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)": `{{ .Values.%s `,
-		"(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)": `{{ .Values.%s `,
+	// this is a super basic implementation for now
+	type DelimiterValue struct {
+		Delimiter string
+		Value     string
+	}
+	delimiterValues := []DelimiterValue{
+		{
+			Delimiter: `(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
+			Value:     `{{ .Values.%s }}`,
+		},
+		{
+			Delimiter: `(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?}})`,
+			Value:     `{{ .Values.%s }}`,
+		},
+		{
+			Delimiter: "(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})",
+			Value:     `{{ .Values.%s }}`,
+		},
+		{
+			Delimiter: "(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?}})",
+			Value:     `{{ .Values.%s }}`,
+		},
+		{
+			Delimiter: `(?:{{repl\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
+			Value:     `{{ .Values.%s `,
+		},
+		{
+			Delimiter: `(?:repl{{\s+ConfigOption\s+\")(?P<Item>.*)(?:\"\s?)`,
+			Value:     `{{ .Values.%s `,
+		},
+		{
+			Delimiter: "(?:{{repl\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)",
+			Value:     `{{ .Values.%s `,
+		},
+		{
+			Delimiter: "(?:repl{{\\s+ConfigOption\\s+`)(?P<Item>.*)(?:`\\s?)",
+			Value:     `{{ .Values.%s `,
+		},
+		{
+			Delimiter: `(?:repl{{\s+ConfigOption\s+\")(?P<Item>([^\"]*))`,
+			Value:     `{{ ".Values.%s`, // this one is super hacky for now, because its' repl{{ , we assume it's a string and quote it
+		},
+		{
+			Delimiter: `(?:ConfigOption\s+\")(?P<Item>[^\s]+)(?:\")`,
+			Value:     `.Values.%s`,
+		},
 	}
 
 	updatedContent := string(content)
 
-	for delimiter, value := range delimiters {
-		r := regexp.MustCompile(delimiter)
-		regexMatch := r.FindAllStringSubmatch(string(content), -1)
+	for _, dv := range delimiterValues {
+		r := regexp.MustCompile(dv.Delimiter)
+		regexMatch := r.FindAllStringSubmatch(string(updatedContent), -1)
 		for _, result := range regexMatch {
 			_, valuesPath, err := getValuesTypeAndPathForConfigItem(result[1], kotsConfig)
 			if err != nil {
@@ -359,7 +393,8 @@ func replaceConfigOption(content []byte, kotsConfig *kotsv1beta1.Config) ([]byte
 				continue
 			}
 
-			updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(value, valuesPath))
+			updatedContent = strings.ReplaceAll(updatedContent, result[0], fmt.Sprintf(dv.Value, valuesPath))
+			logger.Verbosef("replaced %s with %s", result[0], fmt.Sprintf(dv.Value, valuesPath))
 		}
 
 	}

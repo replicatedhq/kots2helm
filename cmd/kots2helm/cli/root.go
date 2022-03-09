@@ -27,6 +27,9 @@ func RootCmd() *cobra.Command {
 			if v.GetString("log-level") == "debug" {
 				logger.Info("setting log level to debug")
 				logger.SetDebug()
+			} else if v.GetString("log-level") == "verbose" {
+				logger.Info("setting log level to verbose")
+				logger.SetVerbose()
 			}
 
 			if err := builder.Build(args[0], v.GetString("name"), v.GetString("version")); err != nil {

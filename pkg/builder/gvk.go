@@ -40,6 +40,9 @@ func isKOTSManifest(content []byte) (bool, error) {
 	if strings.HasPrefix(o.APIVersion, "troubleshoot.replicated.com") {
 		return true, nil
 	}
+	if strings.HasPrefix(o.APIVersion, "troubleshoot.sh") {
+		return true, nil
+	}
 	if o.APIVersion == "app.k8s.io/v1beta1" && o.Kind == "Application" {
 		return true, nil
 	}

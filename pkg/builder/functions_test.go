@@ -246,6 +246,50 @@ func Test_replaceConfigOption(t *testing.T) {
 			},
 			expect: `password: '{{ .Values.group1.postgres_password | Base64Encode }}'`,
 		},
+		{
+			name: "complex item",
+			args: args{
+				content: `password: '{{ if eq (ConfigOption "something") "1"}}true{{ else }}false{{ end }}'`,
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{
+							{
+								Name: "group1",
+								Items: []kotsv1beta1.ConfigItem{
+									{
+										Name: "something",
+										Type: "text",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expect: `password: '{{ if eq (.Values.group1.something) "1"}}true{{ else }}false{{ end }}'`,
+		},
+		{
+			name: "no quotes",
+			args: args{
+				content: `item: repl{{ ConfigOption "val" | splitList "." | first  }}`,
+				kotsConfig: &kotsv1beta1.Config{
+					Spec: kotsv1beta1.ConfigSpec{
+						Groups: []kotsv1beta1.ConfigGroup{
+							{
+								Name: "group1",
+								Items: []kotsv1beta1.ConfigItem{
+									{
+										Name: "val",
+										Type: "text",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expect: `item: {{ ".Values.group1.val" | splitList "." | first  }}`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -374,7 +418,7 @@ func Test_replaceConfigOptionEquals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := require.New(t)
-			actual, err := replaceConfigOptionEquals([]byte(tt.args.content), tt.args.kotsConfig)
+			actual, err := replaceConfigOptionEquals([]byte(tt.args.content), tt.args.kotsConfig, false)
 			req.NoError(err)
 			assert.Equal(t, tt.expect, string(actual))
 		})

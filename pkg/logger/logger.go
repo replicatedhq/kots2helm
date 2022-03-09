@@ -9,6 +9,7 @@ import (
 
 var log *zap.Logger
 var atom zap.AtomicLevel
+var verbose = false
 
 func init() {
 	atom = zap.NewAtomicLevel()
@@ -29,6 +30,11 @@ func init() {
 
 func SetDebug() {
 	atom.SetLevel(zapcore.DebugLevel)
+}
+
+func SetVerbose() {
+	atom.SetLevel(zapcore.DebugLevel)
+	verbose = true
 }
 
 func GetLogger() *zap.Logger {
@@ -78,6 +84,16 @@ func Debug(msg string, fields ...zap.Field) {
 }
 
 func Debugf(template string, args ...interface{}) {
+	defer log.Sync()
+	sugar := log.Sugar()
+	sugar.Debugf(template, args...)
+}
+
+func Verbosef(template string, args ...interface{}) {
+	if !verbose {
+		return
+	}
+
 	defer log.Sync()
 	sugar := log.Sugar()
 	sugar.Debugf(template, args...)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/plus3it/gorecurcopy"
+	"github.com/replicatedhq/kots2helm/pkg/logger"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/cli/values"
@@ -51,7 +52,8 @@ func Build(inputDir string, name string, version string) error {
 		return err
 	}
 
-	if err := replaceKOTSTemplatesWithHelmTemplates(workspace); err != nil {
+	remainingKOTSTemplateFunctionsMap, err := replaceKOTSTemplatesWithHelmTemplates(workspace)
+	if err != nil {
 		return err
 	}
 
@@ -68,7 +70,15 @@ func Build(inputDir string, name string, version string) error {
 		return err
 	}
 
-	wasSuccessful = true
+	wasSuccessful = len(remainingKOTSTemplateFunctionsMap) == 0
+
+	if !wasSuccessful {
+		fmt.Println("The following files have template functions that could not be converted:")
+		for path, count := range remainingKOTSTemplateFunctionsMap {
+			fmt.Printf("%s: %d\n", path, count)
+		}
+	}
+
 	fmt.Printf("chart is at %s\n", archiveFile)
 
 	// if err := build.publishHelmChart(archiveFile, r); err != nil {
@@ -99,6 +109,7 @@ func removeKOTSManifests(workspace string) error {
 			}
 
 			if shouldDelete {
+				logger.Verbosef("removing %s because it's a KOTS manifest", path)
 				if err := os.Remove(path); err != nil {
 					return errors.Wrap(err, "failed to remove file")
 				}
