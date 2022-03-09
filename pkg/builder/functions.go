@@ -277,7 +277,7 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 		if k == "kots.io/when" {
 			// convert the value to a helm template
 			opts := HelmifyOpts{
-				FullExpandConfigOptionEqualsToIfElseEnd: false, // this won't be compatible with helm if do it otherwise
+				FullExpandConfigOptionEqualsToIfElseEnd: true,
 			}
 			helmed, err := helmify([]byte(v), kotsConfig, opts)
 			if err != nil {
@@ -303,7 +303,7 @@ func replaceWhenAndExcludeAnnotations(content []byte, kotsConfig *kotsv1beta1.Co
 		} else if k == "kots.io/exclude" {
 			// convert the value to a helm template
 			opts := HelmifyOpts{
-				FullExpandConfigOptionEqualsToIfElseEnd: false, // this won't be compatible with helm if do it otherwise
+				FullExpandConfigOptionEqualsToIfElseEnd: true,
 			}
 			helmed, err := helmify([]byte(v), kotsConfig, opts)
 			if err != nil {
